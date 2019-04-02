@@ -1,33 +1,39 @@
-var ss = SpreadsheetApp.openById("<my Spreadsheet>");
+var ss = SpreadsheetApp.openById("{spreadsheet id : it's in the URL}");
 var sheet = ss.getSheetByName("Transactions");
-var ChaseMail = GmailApp.getUserLabelByName("Automation/Bank");
+var ChaseMail = GmailApp.getUserLabelByName("Automation/Bank Unprocessed");
+var ChaseOut = GmailApp.getUserLabelByName("Automation/Bank Processed");
+
+
 var logsheet = ss.getSheetByName("Issue Tracking");
 
 /// Set a variable for each subject line of emails that you want to filter. 
-var singleTransaction = "Your Single Transaction Alert from <bank>"
-var subjectTarget = "Your Single Transaction Alert from <bank>"
+var singleTransaction = "{you bank's email subject line}"
+var subjectTarget = "{you bank's email subject line}"
+
+
 
 function main() {
-  
+  logger(["function started"])
  // Get all of the messages from your inbox
-  var myMailThreads = myMail.getThreads();
+  var ChaseMailThreads = ChaseMail.getThreads();
   
 // cycle through each one and check it for the subject line 
-  var transactions = [];
-  for (var i = 0 ; i < myMailThreads.length; i++) {
-    var messages = GmailApp.getMessagesForThread(myMailThreads[i]); 
+
+  logger(["Found threads",ChaseMailThreads.length])
+  for (var i = 0 ; i < ChaseMailThreads.length; i++) {
+    var messages = GmailApp.getMessagesForThread(ChaseMailThreads[i]); 
       for (var p = 0 ; p < messages.length; p++) {
         var subject = messages[p].getSubject();
-        var isImportant = myMailThreads[i].isImportant();   
+        var isImportant = ChaseMailThreads[i].isImportant();   
         
-        if (subject == singleTransaction && isImportant==true) 
-        {
+        var isFrom = messages[p].getFrom() 
+        if(isFrom!="{your banks email}"){continue};  //Chase <no-reply@alertsp.chase.com>
           // dicect the body of the email
           var MailID = messages[p].getId();
           var HTMLbody = messages[p].getBody();
           var paragraph = HTMLbody.slice(97,319);
           
-          messages[p].moveToTrash();
+          //messages[p].moveToTrash();
           //locate the $$ sum
           var usdMark = paragraph.lastIndexOf("($USD)");
           var atMark = paragraph.lastIndexOf(" at ");
@@ -63,67 +69,54 @@ function main() {
             'Tday': day,
             'Thour':hour
           }
-          transactions.push(transaction);
-          //logger(["type",typeof(transactions)])
-          //logger(["transaction",transaction,transactions])
-          
-        }
+         
+              try{
+                postToDB(transaction);
+                messages[p].getThread().removeLabel(ChaseMail)
+                messages[p].getThread().addLabel(ChaseOut)
+                    } catch(e){
+                     logger(["error pushing",e,JSON.stringify(transaction)]);
+                   }
       }
-    }  //mark messages read
-      if (transactions.length > 0){
-        postToDB(transactions);
-      } 
+    }  
+
   }
-  //GmailApp.markThreadsUnimportant(ChaseMailThreads);
 
-
-
-function logger(someList){
-    someList.push(String(new Date()));
-    logsheet.appendRow(someList);
-    }
-
-function postToDB(transactions){
-  var user = '<my Login>';
-  var userPwd = '<my password>';
+function postToDB(transaction){
+  var user = '{your secure login creds}';
+  var userPwd = '{you secure login creds}';
    
-  var conn = Jdbc.getConnection("<server login>", user, userPwd);
+  var conn = Jdbc.getConnection("jdbc:sqlserver://{ Your server }:1433;databaseName=Home", user, userPwd);
   
   var stmt = conn.createStatement();
 
      
-    for (i=0;i<transactions.length;i++)
-    {
+
     var sqlString2 = "MERGE [dbo].[Transactions] AS [TARGET] " +
-                      "USING  (VALUES ('" + transactions[i]['runDate'] + "','" + 
-                                      "'"+ transactions[i]['Tmail'] + "','" + 
-                                      "'"+ transactions[i]['Tloc'] + "','"+ 
-                                      "'"+ transactions[i]['Tdate'] + "'," + 
-                                      "'"+ transactions[i]['Tamount'] + ",'" + 
-                                      "'"+ transactions[i]['Ttime'] + "')) AS [SOURCE] "+
+                      "USING  (VALUES ('" + transaction['runDate'] + "'," + 
+                                      "'"+ transaction['Tmail'] + "'," + 
+                                      "'"+ transaction['Tloc'] + "',"+ 
+                                      "'"+ transaction['Tdate'] + "'," + 
+                                      ""+ transaction['Tamount'] + "," + 
+                                      "'"+ transaction['Ttime'] + "')) AS [SOURCE] "+
                       "([Date of pull],[Unique mail id],[Reciept text],[Date],[Amount],[Time EST])"+
                       "on [Target].[Unique mail id] = [Source].[Unique mail id] "+
                       
                       "WHEN NOT MATCHED "+
                       "THEN INSERT "+
                       "VALUES ("+
-                      "'" + transactions[i]['runDate'] + "','" + 
-                                      "'"+ transactions[i]['Tmail'] + "','" + 
-                                      "'"+ transactions[i]['Tloc'] + "','"+ 
-                                      "'"+ transactions[i]['Tdate'] + "'," + 
-                                      "'"+ transactions[i]['Tamount'] + ",'" + 
-                                      "'"+ transactions[i]['Ttime'] + "');"
-    logger(["Transaction Run",sqlString2]);
+                      "'" + transaction['runDate'] + "'," + 
+                                      "'"+ transaction['Tmail'] + "'," + 
+                                      "'"+ transaction['Tloc'] + "',"+ 
+                                      "'"+ transaction['Tdate'] + "'," + 
+                                      ""+ transaction['Tamount'] + "," + 
+                                      "'"+ transaction['Ttime'] + "');"
+    
+    try{
     var rs = stmt.execute(sqlString2);
-  }
+    
+    } catch(e){
+    logger(["Transaction Run",e,sqlString2]);
+    }
+}
    
-}
-
-function getIdList(transactions){
-	var mailIds = ""
-	for (i=0;i<transactions.length;i++){
-		mailIds = mailIds + "'" + transactions[i]['Tmail'] + "'"
-        if (i!=transactions.length-1) {mailIds = mailIds + ","}
-	}
-	return mailIds
-}
