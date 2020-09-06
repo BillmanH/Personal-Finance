@@ -1,24 +1,34 @@
-var ss = SpreadsheetApp.openById("{spreadsheet id : it's in the URL}");
+//Global Functions
+// untag emails parameter, set to `false` when in development
+var untag_emails = false
+
+var scriptProperties = PropertiesService.getScriptProperties();
+var user = scriptProperties.getProperty('username');
+var userPwd = scriptProperties.getProperty('password');
+var sheetguid = scriptProperties.getProperty('sheetguid');
+var myServer = scriptProperties.getProperty('serverfqdn');
+
+//Gmail 
+var ss = SpreadsheetApp.openById(sheetguid);
 var sheet = ss.getSheetByName("Transactions");
 var ChaseMail = GmailApp.getUserLabelByName("Automation/Bank Unprocessed");
 var ChaseOut = GmailApp.getUserLabelByName("Automation/Bank Processed");
-
-
 var logsheet = ss.getSheetByName("Issue Tracking");
 
+
 /// Set a variable for each subject line of emails that you want to filter. 
-var singleTransaction = "{you bank's email subject line}"
-var subjectTarget = "{you bank's email subject line}"
+var singleTransaction = "Your Single Transaction Alert from Chase"
+var subjectTarget = "Your Single Transaction Alert from Chase"
 
 
 
 function main() {
-  logger(["function started"])
- // Get all of the messages from your inbox
+  //logger(["function started"])
+  // Get all of the messages from your inbox
   var ChaseMailThreads = ChaseMail.getThreads();
   
-// cycle through each one and check it for the subject line 
-
+  // cycle through each one and check it for the subject line 
+  
   logger(["Found threads",ChaseMailThreads.length])
   for (var i = 0 ; i < ChaseMailThreads.length; i++) {
     var messages = GmailApp.getMessagesForThread(ChaseMailThreads[i]); 
@@ -26,14 +36,13 @@ function main() {
         var subject = messages[p].getSubject();
         var isImportant = ChaseMailThreads[i].isImportant();   
         
-        var isFrom = messages[p].getFrom() 
-        if(isFrom!="{your banks email}"){continue};  //Chase <no-reply@alertsp.chase.com>
+        var isFrom = messages[p].getFrom() //"Chase <no.reply.alerts@chase.com>"
+        if(isFrom!="Chase <no.reply.alerts@chase.com>"){continue};
           // dicect the body of the email
           var MailID = messages[p].getId();
           var HTMLbody = messages[p].getBody();
           var paragraph = HTMLbody.slice(97,319);
           
-          //messages[p].moveToTrash();
           //locate the $$ sum
           var usdMark = paragraph.lastIndexOf("($USD)");
           var atMark = paragraph.lastIndexOf(" at ");
@@ -72,51 +81,48 @@ function main() {
          
               try{
                 postToDB(transaction);
-                messages[p].getThread().removeLabel(ChaseMail)
-                messages[p].getThread().addLabel(ChaseOut)
-                    } catch(e){
-                     logger(["error pushing",e,JSON.stringify(transaction)]);
-                   }
+                // only update the taggs if in prod
+                if(untag_emails){
+                  messages[p].getThread().removeLabel(ChaseMail)
+                  messages[p].getThread().addLabel(ChaseOut)
+                }
+              } catch(e){
+                logger(["error pushing",e,JSON.stringify(transaction)]);
+              }
       }
-    }  
-
-  }
+    }
+}
 
 function postToDB(transaction){
-  var user = '{your secure login creds}';
-  var userPwd = '{you secure login creds}';
-   
-  var conn = Jdbc.getConnection("jdbc:sqlserver://{ Your server }:1433;databaseName=Home", user, userPwd);
-  
+  var conn = Jdbc.getConnection(myServer, user, userPwd);  
   var stmt = conn.createStatement();
-
-     
-
-    var sqlString2 = "MERGE [dbo].[Transactions] AS [TARGET] " +
-                      "USING  (VALUES ('" + transaction['runDate'] + "'," + 
-                                      "'"+ transaction['Tmail'] + "'," + 
-                                      "'"+ transaction['Tloc'] + "',"+ 
-                                      "'"+ transaction['Tdate'] + "'," + 
-                                      ""+ transaction['Tamount'] + "," + 
-                                      "'"+ transaction['Ttime'] + "')) AS [SOURCE] "+
-                      "([Date of pull],[Unique mail id],[Reciept text],[Date],[Amount],[Time EST])"+
-                      "on [Target].[Unique mail id] = [Source].[Unique mail id] "+
-                      
-                      "WHEN NOT MATCHED "+
+  var sqlString = "MERGE [dbo].[Transactions] AS [TARGET] " +
+    "USING  (VALUES ('" + transaction['runDate'] + "'," + 
+      "'"+ transaction['Tmail'] + "'," + 
+        "'"+ transaction['Tloc'] + "',"+ 
+          "'"+ transaction['Tdate'] + "'," + 
+            ""+ transaction['Tamount'] + "," + 
+              "'"+ transaction['Ttime'] + "')) AS [SOURCE] "+
+                "([Date of pull],[Unique mail id],[Reciept text],[Date],[Amount],[Time EST])"+
+                  "on [Target].[Unique mail id] = [Source].[Unique mail id] "+
+                    
+                    "WHEN NOT MATCHED "+
                       "THEN INSERT "+
-                      "VALUES ("+
-                      "'" + transaction['runDate'] + "'," + 
-                                      "'"+ transaction['Tmail'] + "'," + 
-                                      "'"+ transaction['Tloc'] + "',"+ 
-                                      "'"+ transaction['Tdate'] + "'," + 
-                                      ""+ transaction['Tamount'] + "," + 
-                                      "'"+ transaction['Ttime'] + "');"
+                        "VALUES ("+
+                          "'" + transaction['runDate'] + "'," + 
+                            "'"+ transaction['Tmail'] + "'," + 
+                              "'"+ transaction['Tloc'] + "',"+ 
+                                "'"+ transaction['Tdate'] + "'," + 
+                                  ""+ transaction['Tamount'] + "," + 
+                                    "'"+ transaction['Ttime'] + "');"
     
+      var rs = stmt.execute(sqlString);
     try{
     var rs = stmt.execute(sqlString2);
     
     } catch(e){
     logger(["Transaction Run",e,sqlString2]);
+    breakymcbreakfast
     }
 }
    
