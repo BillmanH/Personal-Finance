@@ -2,7 +2,7 @@
 These are the files that I use to make my own personal finance application. I created this around 2014 and has been running smoothly ever since. 
 
 some of the scripts require keys or paths that you will have to specify. 
-Check out the blog  (from an archived HTML file)[https://s3-us-west-2.amazonaws.com/williamjeffreyharding.com/diywebapps/financelogger.html]:
+Check out the blog  [from an archived HTML file](https://s3-us-west-2.amazonaws.com/williamjeffreyharding.com/diywebapps/financelogger.html)
 
 
 ## transaction_logger.gs
